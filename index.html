@@ -6,7 +6,7 @@
 <title>Baron Motorsport · Countdown</title>
 <link rel="icon" href="logo.svg">
 <style>
-  :root { --bg: #0e0f12; --fg: #f2f2f2; --muted: #8a8f98; --accent: #e10600; }
+  :root { --bg: #0e0f12; --fg: #f2f2f2; --muted: #8a8f98; --accent: #e10600; --panel: #1a1c21; color-scheme: dark; }
   * { box-sizing: border-box; }
   body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: var(--bg); color: var(--fg);
          font-family: system-ui, sans-serif; text-align: center; padding: 16px; }
@@ -19,6 +19,24 @@
   #clock span { color: var(--muted); font-size: .8rem; text-transform: uppercase; }
   #logo { width: min(320px, 70vw); margin-bottom: 1.5em; }
   ul { list-style: none; padding: 0; margin: 2em 0 0; color: var(--muted); font-size: .9rem; }
+
+  .corner { position: fixed; bottom: 12px; opacity: .3; background: none; color: var(--fg); border: 1px solid var(--muted);
+            border-radius: 6px; padding: 4px 9px; font-size: .75rem; cursor: pointer; }
+  .corner:hover, .corner:focus-visible { opacity: 1; }
+  .corner.left { left: 12px; } .corner.right { right: 12px; }
+
+  dialog { background: var(--panel); color: var(--fg); border: 1px solid #333; border-radius: 10px; width: min(640px, 100% - 32px); text-align: left; }
+  dialog::backdrop { background: #000a; }
+  dialog h2 { margin-top: 0; font-size: 1.1rem; }
+  .hint { color: var(--muted); font-size: .85rem; }
+  dialog input, dialog textarea, dialog button { font: inherit; background: var(--bg); color: var(--fg); border: 1px solid #444; border-radius: 6px; padding: 6px 8px; }
+  dialog button { cursor: pointer; }
+  dialog textarea { width: 100%; font-family: ui-monospace, monospace; font-size: .85rem; margin: 8px 0; }
+  .row { display: flex; gap: 6px; flex-wrap: wrap; }
+  .row #f-name, .row #token { flex: 1; min-width: 140px; }
+  .end { justify-content: flex-end; margin-top: 8px; }
+  #save { background: var(--accent); border-color: var(--accent); }
+  #msg { min-height: 1.2em; font-size: .85rem; }
 </style>
 </head>
 <body>
@@ -35,51 +53,150 @@
   </div>
   <ul id="next"></ul>
 </main>
-<script>
-// Modifica qui: data ISO con fuso orario (+02:00 = ora legale Italia, +01:00 = ora solare).
-// ponytail: ordine qualsiasi, lo script ordina e salta quelli passati.
-const EVENTS = [
-  // Monza 25-27/09/2026 — GT Open (Provisional schedule Draft 1)
-  { name: "Monza · RFID tag pick-up",                 start: "2026-09-24T09:00:00+02:00" },
-  { name: "Monza · Private test 1",                   start: "2026-09-24T11:10:00+02:00" },
-  { name: "Monza · Private test 2",                   start: "2026-09-24T14:50:00+02:00" },
-  { name: "Monza · Ritiro gomme Michelin (Bronze)",   start: "2026-09-24T17:00:00+02:00" },
-  { name: "Monza · Ritiro gomme Michelin",            start: "2026-09-24T17:30:00+02:00" },
-  { name: "Monza · Track walk",                       start: "2026-09-24T18:15:00+02:00" },
-  { name: "Monza · Technical scrutineering",          start: "2026-09-25T09:10:00+02:00" },
-  { name: "Monza · Briefing piloti & TM",            start: "2026-09-25T10:00:00+02:00" },
-  { name: "Monza · Briefing Team Manager",            start: "2026-09-25T10:30:00+02:00" },
-  { name: "Monza · Free practice 1",                  start: "2026-09-25T11:20:00+02:00" },
-  { name: "Monza · Free practice 2",                  start: "2026-09-25T15:50:00+02:00" },
-  { name: "Monza · Ritiro gomme Michelin",            start: "2026-09-25T17:30:00+02:00" },
-  { name: "Monza · Free practice 3 (Bronze)",         start: "2026-09-26T09:00:00+02:00" },
-  { name: "Monza · Qualifying 1 (Driver 1)",          start: "2026-09-26T11:20:00+02:00" },
-  { name: "Monza · Qualifying 2 (Driver 2)",          start: "2026-09-26T14:45:00+02:00" },
-  { name: "Monza · Pit lane open (GT Open 500)",      start: "2026-09-27T12:10:00+02:00" },
-  { name: "Monza · GARA GT Open 500",                 start: "2026-09-27T12:30:00+02:00" },
-];
 
-const fmt = new Intl.DateTimeFormat("it-IT", { dateStyle: "full", timeStyle: "short" });
+<button class="corner left" id="btn-csv" title="Carica un file CSV">CSV</button>
+<button class="corner right" id="btn-edit" title="Modifica programma">✎</button>
+<input type="file" id="file" accept=".csv,text/csv,text/plain" hidden>
+
+<dialog id="dlg">
+  <form method="dialog">
+    <h2>Programma</h2>
+    <p class="hint">Una riga per evento: <code>data;ora;evento</code> — es. <code>2026-09-25;09:10;Free practice 1</code>
+      (va bene anche <code>25/09/2026</code> e <code>09.10</code>). Orari in ora italiana; per un altro fuso aggiungi
+      una quarta colonna, es. <code>;Europe/Lisbon</code>.</p>
+    <div class="row">
+      <input type="date" id="f-date" aria-label="Data">
+      <input type="time" id="f-time" aria-label="Ora">
+      <input id="f-name" placeholder="Evento" aria-label="Evento">
+      <button type="button" id="f-add">Aggiungi</button>
+    </div>
+    <textarea id="txt" rows="12" spellcheck="false" aria-label="Programma CSV"></textarea>
+    <div class="row">
+      <input type="password" id="token" autocomplete="off" aria-label="GitHub token">
+      <button type="button" id="load-file">Carica CSV…</button>
+    </div>
+    <p id="msg"></p>
+    <div class="row end">
+      <button value="cancel">Chiudi</button>
+      <button type="button" id="save">Salva online</button>
+    </div>
+  </form>
+</dialog>
+
+<script>
+const REPO = "MoldyAxis395/countdown", FILE = "events.csv", TZ = "Europe/Rome";
 const $ = id => document.getElementById(id);
 const pad = n => String(n).padStart(2, "0");
-const upcoming = EVENTS.map(e => ({ ...e, t: new Date(e.start) })).sort((a, b) => a.t - b.t);
+const ls = { get: k => { try { return localStorage.getItem(k); } catch { return null; } },
+             set: (k, v) => { try { localStorage.setItem(k, v); } catch {} } };
+
+// Ora "da orologio" in un fuso IANA → istante assoluto.
+// ponytail: sbaglia di 1h solo nell'ora del cambio ora legale (notte), irrilevante per il programma.
+function zoned(y, mo, d, h, mi, tz) {
+  const guess = Date.UTC(y, mo - 1, d, h, mi);
+  const p = Object.fromEntries(new Intl.DateTimeFormat("en-US", { timeZone: tz, hourCycle: "h23",
+    year: "numeric", month: "numeric", day: "numeric", hour: "numeric", minute: "numeric" })
+    .formatToParts(guess).map(x => [x.type, x.value]));
+  return new Date(2 * guess - Date.UTC(p.year, p.month - 1, p.day, p.hour, p.minute));
+}
+
+// Ritorna { events, bad } — bad = numeri di riga non validi (la prima riga può essere l'intestazione).
+function parseCSV(text) {
+  const events = [], bad = [];
+  text.split(/\r?\n/).forEach((line, i) => {
+    if (!line.trim()) return;
+    const c = line.split(line.includes(";") ? ";" : ",").map(s => s.trim());
+    let y, mo, d, m;
+    if ((m = c[0].match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/))) [, y, mo, d] = m;
+    else if ((m = c[0].match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/))) [, d, mo, y] = m;
+    const t = (c[1] || "").match(/^(\d{1,2})[:.](\d{2})/);
+    const tz = c[3] || TZ;
+    try {
+      if (!y || !t || !c[2]) throw 0;
+      events.push({ name: c[2], tz, t: zoned(+y, +mo, +d, +t[1], +t[2], tz) });
+    } catch { if (i) bad.push(i + 1); }
+  });
+  events.sort((a, b) => a.t - b.t);
+  return { events, bad };
+}
+
+const fmt = e => new Intl.DateTimeFormat("it-IT", { dateStyle: "full", timeStyle: "short", timeZone: e.tz }).format(e.t);
+let csv = "", events = [];
 
 function tick() {
   const now = Date.now();
-  const list = upcoming.filter(e => e.t > now);
-  if (!list.length) { $("name").textContent = "Nessun evento in programma"; $("when").textContent = ""; $("clock").hidden = true; return; }
+  const list = events.filter(e => e.t > now);
+  $("clock").hidden = !list.length;
+  if (!list.length) { $("name").textContent = "Nessun evento in programma"; $("when").textContent = ""; $("next").replaceChildren(); return; }
   const [e, ...rest] = list;
   const diff = Math.floor((e.t - now) / 1000);
   $("name").textContent = e.name;
-  $("when").textContent = fmt.format(e.t);
+  $("when").textContent = fmt(e);
   $("d").textContent = Math.floor(diff / 86400);
   $("h").textContent = pad(Math.floor(diff / 3600) % 24);
   $("m").textContent = pad(Math.floor(diff / 60) % 60);
   $("s").textContent = pad(diff % 60);
-  $("next").innerHTML = rest.slice(0, 3).map(r => `<li>${r.name} — ${fmt.format(r.t)}</li>`).join("");
+  $("next").replaceChildren(...rest.slice(0, 3).map(r =>
+    Object.assign(document.createElement("li"), { textContent: `${r.name} — ${fmt(r)}` })));
 }
-tick();
+
+async function load() {
+  try {
+    const r = await fetch(`${FILE}?t=${Date.now()}`);  // bypass cache CDN di Pages
+    if (r.ok) { csv = await r.text(); events = parseCSV(csv).events; }
+  } catch {}
+  tick();
+}
+
+// --- editor ---
+const msg = t => $("msg").textContent = t;
+function openEditor(text) {
+  $("txt").value = text ?? csv;
+  $("token").value = "";
+  $("token").placeholder = ls.get("gh-token") ? "Token GitHub salvato ✓ (incolla per cambiarlo)" : "Token GitHub (serve solo la prima volta)";
+  msg("");
+  if (!$("dlg").open) $("dlg").showModal();
+}
+$("btn-edit").onclick = () => openEditor();
+$("btn-csv").onclick = $("load-file").onclick = () => $("file").click();
+$("file").onchange = async () => {
+  const f = $("file").files[0];
+  if (f) openEditor(await f.text());
+  $("file").value = "";
+  if (f) msg(`Caricato ${f.name} — controlla e premi "Salva online".`);
+};
+$("f-add").onclick = () => {
+  const [date, time, name] = [$("f-date").value, $("f-time").value, $("f-name").value.trim()];
+  if (!date || !time || !name) return msg("Compila data, ora ed evento.");
+  $("txt").value = $("txt").value.replace(/\s*$/, "\n") + `${date};${time};${name.replaceAll(";", ",")}\n`;
+  $("f-name").value = ""; $("f-name").focus();
+  msg("");
+};
+$("save").onclick = async () => {
+  const text = $("txt").value.trim() + "\n";
+  const { events: ev, bad } = parseCSV(text);
+  if (bad.length) return msg(`Righe non valide: ${bad.join(", ")}`);
+  const token = $("token").value.trim() || ls.get("gh-token");
+  if (!token) return msg("Serve il token GitHub per salvare.");
+  msg("Salvataggio…");
+  const url = `https://api.github.com/repos/${REPO}/contents/${FILE}`;
+  const headers = { Authorization: `Bearer ${token}`, Accept: "application/vnd.github+json" };
+  try {
+    const cur = await fetch(url, { headers, cache: "no-store" });
+    const sha = cur.ok ? (await cur.json()).sha : undefined;
+    const content = btoa(Array.from(new TextEncoder().encode(text), b => String.fromCharCode(b)).join(""));
+    const r = await fetch(url, { method: "PUT", headers, body: JSON.stringify({ message: "Aggiorna programma", content, sha }) });
+    if (!r.ok) throw new Error(`${r.status} ${(await r.json().catch(() => ({}))).message || ""}`);
+    ls.set("gh-token", token);
+    csv = text; events = ev; tick();
+    $("token").value = "";
+    msg("Salvato ✓ — online per tutti tra circa 1 minuto.");
+  } catch (e) { msg(`Errore: ${e.message} (token scaduto o senza permesso?)`); }
+};
+
+load();
 setInterval(tick, 1000);
+setInterval(load, 5 * 60 * 1000);  // schermi sempre accesi prendono gli aggiornamenti da soli
 </script>
 </body>
 </html>
