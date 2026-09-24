@@ -3,7 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Prossima sessione</title>
+<title>Baron Motorsport · Countdown</title>
+<link rel="icon" href="logo.svg">
 <style>
   :root { --bg: #0e0f12; --fg: #f2f2f2; --muted: #8a8f98; --accent: #e10600; }
   * { box-sizing: border-box; }
@@ -16,11 +17,13 @@
   #clock div { min-width: 3.5ch; }
   #clock b { display: block; font-size: clamp(2.5rem, 12vw, 6rem); font-variant-numeric: tabular-nums; line-height: 1; }
   #clock span { color: var(--muted); font-size: .8rem; text-transform: uppercase; }
+  #logo { width: min(320px, 70vw); margin-bottom: 1.5em; }
   ul { list-style: none; padding: 0; margin: 2em 0 0; color: var(--muted); font-size: .9rem; }
 </style>
 </head>
 <body>
 <main>
+  <img id="logo" src="logo.svg" alt="Baron Motorsport">
   <div id="label">Prossimo evento</div>
   <h1 id="name">—</h1>
   <div id="when"></div>
